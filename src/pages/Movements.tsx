@@ -30,6 +30,13 @@ type MovementWithProduct = Movement & {
 const CREATION_WINDOW_MS = 90_000
 const CHILE_TIMEZONE = "America/Santiago"
 
+const parseSupabaseDate = (value: string) => {
+  // Supabase usually returns timezone-aware timestamps, but this fallback
+  // keeps behavior consistent if the offset suffix is missing.
+  const hasOffset = /([zZ]|[+-]\d{2}:?\d{2})$/.test(value)
+  return new Date(hasOffset ? value : `${value}Z`)
+}
+
 const getChileDateKey = (value: string) => {
   const formatter = new Intl.DateTimeFormat("en-CA", {
     timeZone: CHILE_TIMEZONE,
@@ -38,7 +45,7 @@ const getChileDateKey = (value: string) => {
     day: "2-digit",
   })
 
-  const parts = formatter.formatToParts(new Date(value))
+  const parts = formatter.formatToParts(parseSupabaseDate(value))
   const year = parts.find((part) => part.type === "year")?.value ?? "0000"
   const month = parts.find((part) => part.type === "month")?.value ?? "00"
   const day = parts.find((part) => part.type === "day")?.value ?? "00"
@@ -46,7 +53,7 @@ const getChileDateKey = (value: string) => {
 }
 
 const formatChileDateTime = (value: string) =>
-  new Date(value).toLocaleString("es-CL", {
+  parseSupabaseDate(value).toLocaleString("es-CL", {
     timeZone: CHILE_TIMEZONE,
     dateStyle: "short",
     timeStyle: "short",
@@ -61,9 +68,9 @@ const getMovementDisplay = (movement: MovementWithProduct) => {
     }
   }
 
-  const movementTime = new Date(movement.created_at).getTime()
+  const movementTime = parseSupabaseDate(movement.created_at).getTime()
   const productCreatedTime = movement.productCreatedAt
-    ? new Date(movement.productCreatedAt).getTime()
+    ? parseSupabaseDate(movement.productCreatedAt).getTime()
     : NaN
 
   const isCreation =

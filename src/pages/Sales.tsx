@@ -44,6 +44,7 @@ export default function Sales() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
   const [qrScannerOpen, setQrScannerOpen] = useState(false)
+  const [nameMatches, setNameMatches] = useState<Product[]>([])
   const codeInputRef = useRef<HTMLInputElement>(null)
 
   const cartTotals = useMemo(() => {
@@ -73,42 +74,112 @@ export default function Sales() {
   const handleSearch = async () => {
     setErrorMessage(null)
     setSuccessMessage(null)
+    setNameMatches([])
 
-    if (!code.trim()) return
+    const searchTerm = code.trim()
+    if (!searchTerm) return
 
     setSearchingProduct(true)
 
-    const { data, error } = await supabase
+    const { data: byCode, error: byCodeError } = await supabase
       .from("products")
       .select("*")
-      .eq("code", code.trim())
-      .single()
+      .eq("code", searchTerm)
+      .maybeSingle()
+
+    if (byCodeError) {
+      setSearchingProduct(false)
+      setErrorMessage("No pudimos buscar el producto. Intenta nuevamente.")
+      focusCodeInput()
+      return
+    }
+
+    let productToAdd = byCode
+
+    if (!productToAdd) {
+      const { data: byNameMatches, error: byNameError } = await supabase
+        .from("products")
+        .select("*")
+        .ilike("name", `%${searchTerm}%`)
+        .order("name", { ascending: true })
+        .limit(8)
+
+      if (byNameError) {
+        setSearchingProduct(false)
+        setErrorMessage("No pudimos buscar el producto por nombre.")
+        focusCodeInput()
+        return
+      }
+
+      const matches = byNameMatches ?? []
+
+      if (matches.length === 0) {
+        setSearchingProduct(false)
+        setErrorMessage("No encontramos un producto con ese codigo o nombre.")
+        setCode("")
+        focusCodeInput()
+        return
+      }
+
+      const exactNameMatches = matches.filter(
+        (product) => product.name.trim().toLowerCase() === searchTerm.toLowerCase()
+      )
+
+      if (exactNameMatches.length === 1) {
+        productToAdd = exactNameMatches[0]
+      } else if (matches.length === 1) {
+        productToAdd = matches[0]
+      } else {
+        setNameMatches(matches)
+        setSearchingProduct(false)
+        return
+      }
+    }
 
     setSearchingProduct(false)
 
-    if (error || !data) {
-      setErrorMessage("No encontramos un producto con ese codigo.")
+    if (!productToAdd) {
+      setErrorMessage("No encontramos un producto con ese codigo o nombre.")
       setCode("")
       focusCodeInput()
       return
     }
 
-    const existing = cart.find((item) => item.product.id === data.id)
+    const existing = cart.find((item) => item.product.id === productToAdd.id)
 
     if (existing) {
       setCart((prev) =>
         prev.map((item) =>
-          item.product.id === data.id
+          item.product.id === productToAdd.id
             ? { ...item, quantity: item.quantity + 1 }
             : item
         )
       )
     } else {
-      setCart((prev) => [...prev, { product: data, quantity: 1 }])
+      setCart((prev) => [...prev, { product: productToAdd, quantity: 1 }])
     }
 
     setCode("")
-    setSuccessMessage(`Producto agregado: ${data.name}`)
+    setSuccessMessage(`Producto agregado: ${productToAdd.name}`)
+    focusCodeInput()
+  }
+
+  const selectMatch = (product: Product) => {
+    setNameMatches([])
+    setCode("")
+    const existing = cart.find((item) => item.product.id === product.id)
+    if (existing) {
+      setCart((prev) =>
+        prev.map((item) =>
+          item.product.id === product.id
+            ? { ...item, quantity: item.quantity + 1 }
+            : item
+        )
+      )
+    } else {
+      setCart((prev) => [...prev, { product, quantity: 1 }])
+    }
+    setSuccessMessage(`Producto agregado: ${product.name}`)
     focusCodeInput()
   }
 
@@ -228,7 +299,7 @@ export default function Sales() {
                 <p className="text-xs font-medium uppercase tracking-wider text-slate-500 mb-1">
                   Punto de venta
                 </p>
-                <CardTitle>Escanear o ingresar codigo</CardTitle>
+                <CardTitle>Escanear o ingresar codigo/nombre</CardTitle>
                 <CardDescription>
                   Agrega productos al carrito y procesa la venta en segundos.
                 </CardDescription>
@@ -243,10 +314,13 @@ export default function Sales() {
                 <Input
                   ref={codeInputRef}
                   className="h-12 text-base"
-                  placeholder="Ejemplo: 770012300221"
+                  placeholder="Ejemplo: 770012300221 o Martillo"
                   leftIcon={<ScanLine size={16} />}
                   value={code}
-                  onChange={(event) => setCode(event.target.value)}
+                  onChange={(event) => {
+                    setCode(event.target.value)
+                    if (nameMatches.length > 0) setNameMatches([])
+                  }}
                   onKeyDown={(event) => {
                     if (event.key === "Enter") handleSearch()
                   }}
@@ -275,6 +349,28 @@ export default function Sales() {
                   Escanear
                 </Button>
               </div>
+
+              {nameMatches.length > 0 && (
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-2">
+                  <p className="text-sm font-medium text-slate-700">
+                    Se encontraron {nameMatches.length} productos. Selecciona uno:
+                  </p>
+                  <div className="space-y-1.5">
+                    {nameMatches.map((product) => (
+                      <button
+                        key={product.id}
+                        onClick={() => selectMatch(product)}
+                        className="w-full text-left rounded-lg border border-slate-200 bg-white px-3 py-2.5 hover:bg-slate-100 transition-colors"
+                      >
+                        <p className="text-sm font-medium text-slate-900">{product.name}</p>
+                        <p className="text-xs text-slate-500">
+                          Codigo: {product.code?.trim() || "Sin codigo"} · Stock: {product.stock}
+                        </p>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {(errorMessage || successMessage) && (
                 <div className="space-y-2">
