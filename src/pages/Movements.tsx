@@ -28,6 +28,29 @@ type MovementWithProduct = Movement & {
 }
 
 const CREATION_WINDOW_MS = 90_000
+const CHILE_TIMEZONE = "America/Santiago"
+
+const getChileDateKey = (value: string) => {
+  const formatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone: CHILE_TIMEZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  })
+
+  const parts = formatter.formatToParts(new Date(value))
+  const year = parts.find((part) => part.type === "year")?.value ?? "0000"
+  const month = parts.find((part) => part.type === "month")?.value ?? "00"
+  const day = parts.find((part) => part.type === "day")?.value ?? "00"
+  return `${year}-${month}-${day}`
+}
+
+const formatChileDateTime = (value: string) =>
+  new Date(value).toLocaleString("es-CL", {
+    timeZone: CHILE_TIMEZONE,
+    dateStyle: "short",
+    timeStyle: "short",
+  })
 
 const getMovementDisplay = (movement: MovementWithProduct) => {
   if (movement.type === "OUT") {
@@ -111,15 +134,11 @@ export default function Movements() {
   const filteredMovements = movements.filter((movement) => {
     if (typeFilter !== "ALL" && movement.type !== typeFilter) return false
 
-    if (fromDate) {
-      const fromDateTime = new Date(`${fromDate}T00:00:00`)
-      if (new Date(movement.created_at) < fromDateTime) return false
-    }
+    const movementDateKey = getChileDateKey(movement.created_at)
 
-    if (toDate) {
-      const toDateTime = new Date(`${toDate}T23:59:59`)
-      if (new Date(movement.created_at) > toDateTime) return false
-    }
+    if (fromDate && movementDateKey < fromDate) return false
+
+    if (toDate && movementDateKey > toDate) return false
 
     return true
   })
@@ -207,15 +226,7 @@ export default function Movements() {
                     {movementDisplay.label}
                   </span>
                   <p className="text-sm text-slate-600">Cantidad: {movement.quantity}</p>
-                  <p className="text-xs text-slate-500">
-                    {new Date(movement.created_at).toLocaleString("es-CO", {
-                      day: "2-digit",
-                      month: "short",
-                      year: "numeric",
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}
-                  </p>
+                  <p className="text-xs text-slate-500">{formatChileDateTime(movement.created_at)}</p>
                 </div>
               )
             })}
@@ -278,13 +289,7 @@ export default function Movements() {
                         </TableCell>
                         <TableCell>{movement.quantity}</TableCell>
                         <TableCell>
-                          {new Date(movement.created_at).toLocaleString("es-CO", {
-                            day: "2-digit",
-                            month: "short",
-                            year: "numeric",
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })}
+                          {formatChileDateTime(movement.created_at)}
                         </TableCell>
                       </TableRow>
                     )
